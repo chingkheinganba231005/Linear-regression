@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Linear Regression Simulator</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    table { border-collapse: collapse; width: 100%; margin-bottom: 10px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+    th { background: #f2f2f2; }
+    #controls { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
+    .control-group { display: flex; align-items: center; gap: 5px; }
+    .control-group button { width: 30px; height: 30px; }
+    canvas { border: 1px solid #ccc; display: block; margin: 20px auto; }
+    #mse-container, #optimal-container, #legend { margin-top: 10px; font-weight: bold; }
+    #data-actions { margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <h1>Linear Regression Simulator</h1>
+  <div id="legend">The <span style="color:blue;">blue dashed line</span> represents the optimal regression line.</div>
+  <div>
+    <p>Enter data points below. Click “Add Row” to include more points.</p>
+    <div id="data-actions">
+      <button id="add-row">Add Row</button>
+      <button id="update-data">Update Data</button>
+    </div>
+    <table id="data-table">
+      <thead><tr><th>X</th><th>Y</th></tr></thead>
+      <tbody>
+        <tr><td><input type="number" step="any" value="10"></td><td><input type="number" step="any" value="40"></td></tr>
+        <tr><td><input type="number" step="any" value="20"></td><td><input type="number" step="any" value="50"></td></tr>
+        <tr><td><input type="number" step="any" value="30"></td><td><input type="number" step="any" value="70"></td></tr>
+        <tr><td><input type="number" step="any" value="40"></td><td><input type="number" step="any" value="100"></td></tr>
+        <tr><td><input type="number" step="any" value="50"></td><td><input type="number" step="any" value="120"></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <canvas id="plot" width="600" height="400"></canvas>
+  <div id="controls">
+    <div class="control-group">
+      <label for="slope">Slope:</label>
+      <input type="range" id="slope" min="-5" max="5" step="0.1" value="1" />
+      <span id="slopeVal">1</span>
+      <button data-target="slope" data-action="minus">−</button>
+      <button data-target="slope" data-action="plus">+</button>
+    </div>
+    <div class="control-group">
+      <label for="intercept">Intercept:</label>
+      <input type="range" id="intercept" min="-100" max="100" step="1" value="0" />
+      <span id="interceptVal">0</span>
+      <button data-target="intercept" data-action="minus">−</button>
+      <button data-target="intercept" data-action="plus">+</button>
+    </div>
+  </div>
+  <div id="mse-container">Error (MSE): <span id="mse">0</span></div>
+  <div id="optimal-container">Optimal Slope (m*): <span id="opt-m"></span>, Optimal Intercept (c*): <span id="opt-c"></span></div>
+  <script>
+    const tableBody = document.querySelector('#data-table tbody');
+    const addRowBtn = document.getElementById('add-row');
+    const updateBtn = document.getElementById('update-data');
+    const slopeInput = document.getElementById('slope');
+    const interceptInput = document.getElementById('intercept');
+    const slopeVal = document.getElementById('slopeVal');
+    const interceptVal = document.getElementById('interceptVal');
+    const mseEl = document.getElementById('mse');
+    const optMEl = document.getElementById('opt-m');
+    const optCEl = document.getElementById('opt-c');
+    const canvas = document.getElementById('plot');
+    const ctx = canvas.getContext('2d');
+
+    function readTableData() {
+      return Array.from(tableBody.querySelectorAll('tr')).map(row => {
+        const [xInput, yInput] = row.querySelectorAll('input');
+        return { x: parseFloat(xInput.value) || 0, y: parseFloat(yInput.value) || 0 };
+      }).filter(p => !isNaN(p.x) && !isNaN(p.y));
+    }
+
+    function computeOptimal(data) {
+      const n = data.length;
+      const xMean = data.reduce((sum, p) => sum + p.x, 0) / n;
+      const yMean = data.reduce((sum, p) => sum + p.y, 0) / n;
+      let num = 0, den = 0;
+      data.forEach(p => { num += (p.x - xMean) * (p.y - yMean); den += (p.x - xMean)**2; });
+      const mOpt = num / den;
+      const cOpt = yMean - mOpt * xMean;
+      return { mOpt, cOpt };
+    }
+
+    function draw() {
+      const data = readTableData();
+      if (!data.length) return;
+      const xs = data.map(p => p.x), ys = data.map(p => p.y);
+      const minX = 0, maxX = Math.max(...xs) + 10;
+      const minY = 0, maxY = Math.max(...ys) + 10;
+      const margin = 40, width = canvas.width - 2 * margin, height = canvas.height - 2 * margin;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = 'black'; ctx.fillStyle = 'black'; ctx.lineWidth = 1;
+
+      // Draw axes and ticks
+      ctx.beginPath();
+      ctx.moveTo(margin, margin + height);
+      ctx.lineTo(margin + width, margin + height);
+      ctx.lineTo(margin + width - 10, margin + height - 5);
+      ctx.moveTo(margin + width, margin + height);
+      ctx.lineTo(margin + width - 10, margin + height + 5);
+      ctx.stroke();
+      for (let xTick = 0; xTick <= maxX; xTick += 5) {
+        const xPos = margin + (xTick - minX) / (maxX - minX) * width;
+        ctx.beginPath();
+        ctx.moveTo(xPos, margin + height);
+        ctx.lineTo(xPos, margin + height + 5);
+        ctx.stroke();
+        ctx.fillText(xTick, xPos - 10, margin + height + 20);
+      }
+      ctx.beginPath();
+      ctx.moveTo(margin, margin + height);
+      ctx.lineTo(margin, margin);
+      ctx.lineTo(margin - 5, margin + 10);
+      ctx.moveTo(margin, margin);
+      ctx.lineTo(margin + 5, margin + 10);
+      ctx.stroke();
+      for (let yTick = 0; yTick <= maxY; yTick += 5) {
+        const yPos = margin + height - (yTick - minY) / (maxY - minY) * height;
+        ctx.beginPath();
+        ctx.moveTo(margin, yPos);
+        ctx.lineTo(margin - 5, yPos);
+        ctx.stroke();
+        if (yTick % 10 === 0) {
+          ctx.fillText(yTick, margin - 30, yPos + 5);
+        }
+      }
+
+      // Labels
+      ctx.font = '14px Arial';
+      ctx.fillText('X', margin + width + 10, margin + height + 5);
+      ctx.fillText('Y', margin - 10, margin - 10);
+
+      // Plot data
+      data.forEach(p => {
+        const px = margin + (p.x - minX) / (maxX - minX) * width;
+        const py = margin + height - (p.y - minY) / (maxY - minY) * height;
+        ctx.beginPath(); ctx.arc(px, py, 4, 0, 2 * Math.PI); ctx.fill();
+      });
+
+      // Draw lines
+      const { mOpt, cOpt } = computeOptimal(data);
+      optMEl.textContent = mOpt.toFixed(2);
+      optCEl.textContent = cOpt.toFixed(2);
+      const m = parseFloat(slopeInput.value), b = parseFloat(interceptInput.value);
+      slopeVal.textContent = m; interceptVal.textContent = b;
+      function drawLine(slope, intercept, color, dash = false) {
+        ctx.strokeStyle = color;
+        ctx.setLineDash(dash ? [5, 5] : []);
+        const y1 = slope * minX + intercept;
+        const y2 = slope * maxX + intercept;
+        const x1Px = margin;
+        const y1Px = margin + height - (y1 - minY) / (maxY - minY) * height;
+        const x2Px = margin + width;
+        const y2Px = margin + height - (y2 - minY) / (maxY - minY) * height;
+        ctx.beginPath(); ctx.moveTo(x1Px, y1Px); ctx.lineTo(x2Px, y2Px); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      drawLine(mOpt, cOpt, 'blue', true);
+      drawLine(m, b, 'red');
+
+      // Prediction dots
+      data.forEach(p => {
+        const px = margin + (p.x - minX) / (maxX - minX) * width;
+        const predY = m * p.x + b;
+        const py = margin + height - (predY - minY) / (maxY - minY) * height;
+        ctx.beginPath(); ctx.arc(px, py, 4, 0, 2 * Math.PI);
+        ctx.fillStyle = 'red'; ctx.fill(); ctx.fillStyle = 'black';
+      });
+
+      // MSE
+      let sum = 0;
+      data.forEach(p => {
+        const pred = m * p.x + b;
+        sum += (p.y - pred) ** 2;
+      });
+      mseEl.textContent = (sum / data.length).toFixed(2);
+    }
+
+    addRowBtn.addEventListener('click', () => {
+      const row = document.createElement('tr');
+      row.innerHTML = '<td><input type="number" step="any"></td><td><input type="number" step="any"></td>';
+      tableBody.appendChild(row);
+    });
+    updateBtn.addEventListener('click', draw);
+    document.querySelectorAll('button[data-target]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tgt = document.getElementById(btn.dataset.target);
+        const step = parseFloat(tgt.step), val = parseFloat(tgt.value);
+        tgt.value = btn.dataset.action === 'plus' ? Math.min(+tgt.max, val + step) : Math.max(+tgt.min, val - step);
+        draw();
+      });
+    });
+    slopeInput.addEventListener('input', draw);
+    interceptInput.addEventListener('input', draw);
+    draw();
+  </script>
+</body>
+</html>
